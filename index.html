@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sudoku Pro Web</title>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .contenedor {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            text-align: center;
+        }
+
+        /* Pantalla de Registro */
+        .grupo-input {
+            margin-bottom: 15px;
+            text-align: left;
+        }
+        .grupo-input label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .grupo-input input, .grupo-input select {
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        button {
+            padding: 12px 24px;
+            background-color: #2c3e50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 10px;
+            transition: 0.3s;
+        }
+        button:hover { background-color: #1a252f; }
+
+        /* Pantalla del Juego */
+        .oculto { display: none; }
+        
+        #mensaje-cabecera { color: #2c3e50; font-size: 20px; margin-bottom: 5px; }
+        #etiqueta-errores { color: #C0392B; font-size: 18px; margin-top: 0; margin-bottom: 20px; }
+
+        /* Cuadrícula de Sudoku */
+        .tablero {
+            display: grid;
+            grid-template-columns: repeat(9, 50px);
+            grid-template-rows: repeat(9, 50px);
+            border: 3px solid black;
+            margin: 0 auto 20px auto;
+            width: max-content;
+            background-color: #ccc; /* Color de las líneas delgadas */
+            gap: 1px; /* Crea las líneas delgadas entre celdas */
+        }
+
+        .celda {
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            text-align: center;
+            font-size: 26px;
+            font-weight: bold;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            background-color: white;
+            color: #333;
+        }
+
+        /* Líneas divisorias gruesas para los bloques de 3x3 */
+        .borde-derecho { border-right: 3px solid black; }
+        .borde-abajo { border-bottom: 3px solid black; }
+
+        .celda:focus { background-color: #e8f4f8; }
+        .celda:read-only { cursor: default; background-color: #fcfcfc; }
+
+        /* Estilos Dinámicos (Modo Notas) */
+        .modo-notas {
+            font-size: 14px !important;
+            font-weight: normal !important;
+            font-style: italic;
+            color: #7F8C8D !important;
+        }
+
+        #btn-notas {
+            background-color: #BDC3C7;
+            color: black;
+        }
+        #btn-notas.activo {
+            background-color: #F39C12;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="contenedor">
+        
+        <div id="pantalla-registro">
+            <h2>¡Bienvenido a Sudoku Pro!</h2>
+            <div class="grupo-input">
+                <label>Ingresa tu nombre:</label>
+                <input type="text" id="input-nombre" placeholder="Ej. Alex">
+            </div>
+            <div class="grupo-input">
+                <label>Escoge nivel de dificultad:</label>
+                <select id="select-dificultad">
+                    <option value="Fácil">Fácil</option>
+                    <option value="Normal" selected>Normal</option>
+                    <option value="Difícil">Difícil</option>
+                    <option value="Maestro">Maestro</option>
+                </select>
+            </div>
+            <button onclick="iniciarJuego()">Comenzar Partida</button>
+        </div>
+
+        <div id="pantalla-juego" class="oculto">
+            <h2 id="mensaje-cabecera"></h2>
+            <h3 id="etiqueta-errores">Errores: 0/3</h3>
+            
+            <div class="tablero" id="tablero">
+                </div>
+
+            <button id="btn-notas" onclick="alternarNotas()">Modo Notas: DESACTIVADO</button>
+        </div>
+
+    </div>
+
+    <script>
+        // Variables globales
+        let solucionJuego = [];
+        let errores = 0;
+        let modoNotas = false;
+
+        const COLORES_NUMEROS = {
+            "1": "#E74C3C", "2": "#E67E22", "3": "#27AE60", 
+            "4": "#2980B9", "5": "#8E44AD", "6": "#D35400", 
+            "7": "#16A085", "8": "#C0392B", "9": "#2C3E50"
+        };
+
+        const pantallaRegistro = document.getElementById('pantalla-registro');
+        const pantallaJuego = document.getElementById('pantalla-juego');
+        const tableroDiv = document.getElementById('tablero');
+        const etiquetaErrores = document.getElementById('etiqueta-errores');
+        const btnNotas = document.getElementById('btn-notas');
+
+        // --- LÓGICA DE SUDOKU (BACKTRACKING) ---
+
+        function mezclarArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function esValido(tablero, fila, col, num) {
+            for (let i = 0; i < 9; i++) {
+                if (tablero[fila][i] === num || tablero[i][col] === num) return false;
+            }
+            let inicioFila = fila - (fila % 3);
+            let inicioCol = col - (col % 3);
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (tablero[inicioFila + i][inicioCol + j] === num) return false;
+                }
+            }
+            return true;
+        }
+
+        function llenarTablero(tablero) {
+            for (let i = 0; i < 9; i++) {
+                for (let j = 0; j < 9; j++) {
+                    if (tablero[i][j] === 0) {
+                        let numeros = mezclarArray([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+                        for (let num of numeros) {
+                            if (esValido(tablero, i, j, num)) {
+                                tablero[i][j] = num;
+                                if (llenarTablero(tablero)) return true;
+                                tablero[i][j] = 0;
+                            }
+                        }
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        function generarJuego(dificultad) {
+            // Crear matriz vacía de 9x9
+            let tablero = Array.from({ length: 9 }, () => Array(9).fill(0));
+            llenarTablero(tablero);
+            
+            // Copia secreta de la solución (Deep Copy)
+            solucionJuego = tablero.map(fila => [...fila]);
+
+            let casillasVisibles;
+            if (dificultad === "Fácil") casillasVisibles = Math.floor(Math.random() * 11) + 36; // 36 a 46
+            else if (dificultad === "Normal") casillasVisibles = Math.floor(Math.random() * 4) + 32; // 32 a 35
+            else if (dificultad === "Difícil") casillasVisibles = Math.floor(Math.random() * 4) + 28; // 28 a 31
+            else casillasVisibles = 25; // Maestro
+
+            let casillasABorrar = 81 - casillasVisibles;
+            
+            // Crear lista de todas las posiciones y mezclarlas
+            let posiciones = [];
+            for (let f = 0; f < 9; f++) {
+                for (let c = 0; c < 9; c++) posiciones.push([f, c]);
+            }
+            mezclarArray(posiciones);
+
+            // Borrar casillas
+            for (let i = 0; i < casillasABorrar; i++) {
+                let [f, c] = posiciones[i];
+                tablero[f][c] = 0;
+            }
+
+            return tablero;
+        }
+
+        // --- INTERFAZ Y EVENTOS ---
+
+        function alternarNotas() {
+            modoNotas = !modoNotas;
+            if (modoNotas) {
+                btnNotas.textContent = "Modo Notas: ACTIVADO";
+                btnNotas.classList.add('activo');
+            } else {
+                btnNotas.textContent = "Modo Notas: DESACTIVADO";
+                btnNotas.classList.remove('activo');
+            }
+        }
+
+        function manejarEntradaUsuario(evento, inputElement, fila, col) {
+            if (inputElement.readOnly) return;
+
+            let valorStr = inputElement.value;
+            
+            // Extraer solo números del 1 al 9
+            let digitos = valorStr.replace(/[^1-9]/g, '');
+
+            if (digitos === "") {
+                inputElement.value = "";
+                inputElement.classList.remove('modo-notas');
+                return;
+            }
+
+            if (modoNotas) {
+                // Modo Notas: Guardar únicos, ordenar y limitar a 3
+                let notasUnicas = [...new Set(digitos.split(''))].sort().join('');
+                if (notasUnicas.length > 3) notasUnicas = notasUnicas.slice(0, 3);
+                
+                inputElement.value = notasUnicas;
+                inputElement.classList.add('modo-notas');
+                inputElement.style.color = "#7F8C8D";
+            } else {
+                // Modo Normal: Evaluar respuesta final
+                let numeroIngresado = parseInt(digitos[digitos.length - 1]); // Tomar el último dígito tecleado
+                let numeroCorrecto = solucionJuego[fila][col];
+
+                inputElement.classList.remove('modo-notas');
+                inputElement.value = numeroIngresado;
+
+                if (numeroIngresado === numeroCorrecto) {
+                    // Correcto
+                    inputElement.readOnly = true;
+                    inputElement.style.color = COLORES_NUMEROS[numeroIngresado];
+                } else {
+                    // Incorrecto
+                    inputElement.value = "";
+                    errores++;
+                    etiquetaErrores.textContent = `Errores: ${errores}/3`;
+
+                    if (errores >= 3) {
+                        // setTimeout da un milisegundo para que la pantalla se actualice antes de la alerta
+                        setTimeout(() => {
+                            alert("Has cometido tres errores, comienza de nuevo");
+                            volverAlInicio();
+                        }, 50);
+                    }
+                }
+            }
+        }
+
+        function construirTableroUI(tableroGenerado) {
+            tableroDiv.innerHTML = ""; // Limpiar tablero previo
+
+            for (let f = 0; f < 9; f++) {
+                for (let c = 0; c < 9; c++) {
+                    let input = document.createElement('input');
+                    input.type = "text";
+                    input.className = "celda";
+                    
+                    // Clases CSS para los bordes gruesos de los bloques de 3x3
+                    if (c === 2 || c === 5) input.classList.add("borde-derecho");
+                    if (f === 2 || f === 5) input.classList.add("borde-abajo");
+
+                    let valor = tableroGenerado[f][c];
+                    
+                    if (valor !== 0) {
+                        input.value = valor;
+                        input.readOnly = true;
+                        input.style.color = COLORES_NUMEROS[valor];
+                    } else {
+                        // Evento "input" detecta cualquier cambio en la caja de texto
+                        input.addEventListener('input', (e) => manejarEntradaUsuario(e, input, f, c));
+                    }
+
+                    tableroDiv.appendChild(input);
+                }
+            }
+        }
+
+        function iniciarJuego() {
+            let nombre = document.getElementById('input-nombre').value.trim() || "Jugador Anónimo";
+            let dificultad = document.getElementById('select-dificultad').value;
+
+            // Resetear estado global
+            errores = 0;
+            modoNotas = false;
+            etiquetaErrores.textContent = `Errores: 0/3`;
+            btnNotas.textContent = "Modo Notas: DESACTIVADO";
+            btnNotas.classList.remove('activo');
+
+            // Modificar textos cabecera
+            document.getElementById('mensaje-cabecera').textContent = `'${nombre}' se encuentra jugando una partida (${dificultad})`;
+
+            // Generar y dibujar matriz
+            let matrizPuzzle = generarJuego(dificultad);
+            construirTableroUI(matrizPuzzle);
+
+            // Cambiar pantalla
+            pantallaRegistro.classList.add('oculto');
+            pantallaJuego.classList.remove('oculto');
+        }
+
+        function volverAlInicio() {
+            pantallaJuego.classList.add('oculto');
+            pantallaRegistro.classList.remove('oculto');
+        }
+    </script>
+</body>
+</html>
